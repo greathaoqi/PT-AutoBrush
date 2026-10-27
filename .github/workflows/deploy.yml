@@ -29,7 +29,7 @@ jobs:
       - name: Run Test Suite
         run: python -m unittest discover -v
 
-  # Push 主分支时走极速热更（完全消除 ssh-keyscan 超时与二次安装，5~8 秒完成）
+  # Push 主分支时走极速热更（免装依赖、秒级传输、快速启停，约 8~10 秒完成）
   deploy:
     name: Lightning Fast Deploy
     if: github.event_name != 'pull_request'
@@ -76,7 +76,7 @@ jobs:
           echo "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-          # 1. 本地归档并直传服务器（免 ssh-keyscan 握手超时，秒级传输）
+          # 1. 本地归档并直传服务器（秒级传输）
           tar -czf /tmp/pt-update.tar.gz \
             server.py metrics.py account_status.py security.py security_admin.py \
             index.html app.js login.html login.js
@@ -85,7 +85,7 @@ jobs:
 
           scp -i ~/.ssh/id_rsa -P "${PORT}" $SSH_OPTS /tmp/pt-update.tar.gz "$USER@$HOST":/tmp/pt-update.tar.gz
 
-          # 2. SSH 远程执行无缝热更
+          # 2. SSH 远程执行极速平滑热更
           ssh -i ~/.ssh/id_rsa -p "${PORT}" $SSH_OPTS "$USER@$HOST" 'bash -s' << 'EOF'
             set -euo pipefail
             STAGE=$(mktemp -d /tmp/pt-stage.XXXXXX)
@@ -107,8 +107,9 @@ jobs:
               fi
             done
 
-            # 重启服务并即时自检
-            sudo systemctl restart pt-brush
+            # 快速重启服务（超时2秒未退出则快速 SIGKILL，消除线程池假死阻塞）
+            sudo timeout 2 systemctl stop pt-brush 2>/dev/null || sudo systemctl kill -s SIGKILL pt-brush 2>/dev/null || true
+            sudo systemctl start pt-brush
 
             READY=0
             for _ in $(seq 1 10); do
@@ -126,5 +127,5 @@ jobs:
               exit 1
             fi
 
-            echo "[+] 极速部署成功！"
+            echo "[+] 闪电部署成功！"
           EOF
