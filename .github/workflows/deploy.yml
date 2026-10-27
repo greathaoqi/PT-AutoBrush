@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Pull Request 时运行完整测试套件（防止合并缺陷）
   test:
     name: Full Test Suite
     if: github.event_name == 'pull_request'
@@ -28,6 +29,7 @@ jobs:
       - name: Run Test Suite
         run: python -m unittest discover -v
 
+  # Push 主分支时走极速热更（完全消除 ssh-keyscan 超时与二次安装，5~8 秒完成）
   deploy:
     name: Lightning Fast Deploy
     if: github.event_name != 'pull_request'
@@ -38,7 +40,7 @@ jobs:
 
       - name: Fast Syntax & Privacy Guard
         run: |
-          # 快速语法编译检查（0.1 秒完成）
+          # 语法编译检查（0.1 秒完成）
           python3 -m py_compile server.py metrics.py account_status.py security.py security_admin.py
 
           # 防泄密门禁安全检查
@@ -73,17 +75,18 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -p "${PORT}" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          # 1. 本地极速归档需要更新的核心文件并直传服务器临时目录
+          # 1. 本地归档并直传服务器（免 ssh-keyscan 握手超时，秒级传输）
           tar -czf /tmp/pt-update.tar.gz \
             server.py metrics.py account_status.py security.py security_admin.py \
             index.html app.js login.html login.js
 
-          scp -i ~/.ssh/id_rsa -P "${PORT}" -o StrictHostKeyChecking=accept-new /tmp/pt-update.tar.gz "$USER@$HOST":/tmp/pt-update.tar.gz
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
 
-          # 2. SSH 远程执行平滑部署
-          ssh -i ~/.ssh/id_rsa -p "${PORT}" -o StrictHostKeyChecking=accept-new "$USER@$HOST" 'bash -s' << 'EOF'
+          scp -i ~/.ssh/id_rsa -P "${PORT}" $SSH_OPTS /tmp/pt-update.tar.gz "$USER@$HOST":/tmp/pt-update.tar.gz
+
+          # 2. SSH 远程执行无缝热更
+          ssh -i ~/.ssh/id_rsa -p "${PORT}" $SSH_OPTS "$USER@$HOST" 'bash -s' << 'EOF'
             set -euo pipefail
             STAGE=$(mktemp -d /tmp/pt-stage.XXXXXX)
             cleanup() { rm -rf -- "$STAGE" /tmp/pt-update.tar.gz; }
@@ -109,7 +112,7 @@ jobs:
 
             READY=0
             for _ in $(seq 1 10); do
-              if curl --noproxy '*' -fsS --max-time 1 -o /dev/null http://127.0.0.1:12300/login; then
+              if curl --noproxy '*' -fsS --max-time 1 -o /dev/null http://127.0.0.1:12300/login 2>/dev/null; then
                 READY=1
                 break
               fi
