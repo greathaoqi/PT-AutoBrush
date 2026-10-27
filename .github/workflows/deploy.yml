@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Pull Request 时运行完整测试套件（防止合并缺陷）
   test:
     name: Full Test Suite
     if: github.event_name == 'pull_request'
@@ -29,7 +28,6 @@ jobs:
       - name: Run Test Suite
         run: python -m unittest discover -v
 
-  # Push 主分支时走极速热更（免装依赖、免跑大测试，约 5~8 秒完成）
   deploy:
     name: Lightning Fast Deploy
     if: github.event_name != 'pull_request'
@@ -40,10 +38,10 @@ jobs:
 
       - name: Fast Syntax & Privacy Guard
         run: |
-          # 1. 系统内置 Python 快速语法编译检查（无需安装第三方库，0.2秒完成）
+          # 快速语法编译检查（0.1 秒完成）
           python3 -m py_compile server.py metrics.py account_status.py security.py security_admin.py
 
-          # 2. 防泄密门禁安全检查
+          # 防泄密门禁安全检查
           python3 -c "
           import os, re, sys
           forbidden = [
@@ -65,7 +63,7 @@ jobs:
           print('Privacy check passed: OK')
           "
 
-      - name: Direct Stream Deploy to VPS
+      - name: Direct Deploy to VPS
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           HOST: ${{ secrets.VPS_HOST }}
@@ -77,32 +75,36 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p "${PORT}" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          # 直接通过 SSH 管道将检出的最新文件流式推送到 VPS，免去 VPS 二次 git clone 耗时
-          tar -czf - \
+          # 1. 本地极速归档需要更新的核心文件并直传服务器临时目录
+          tar -czf /tmp/pt-update.tar.gz \
             server.py metrics.py account_status.py security.py security_admin.py \
-            index.html app.js login.html login.js | \
+            index.html app.js login.html login.js
+
+          scp -i ~/.ssh/id_rsa -P "${PORT}" -o StrictHostKeyChecking=accept-new /tmp/pt-update.tar.gz "$USER@$HOST":/tmp/pt-update.tar.gz
+
+          # 2. SSH 远程执行平滑部署
           ssh -i ~/.ssh/id_rsa -p "${PORT}" -o StrictHostKeyChecking=accept-new "$USER@$HOST" 'bash -s' << 'EOF'
             set -euo pipefail
             STAGE=$(mktemp -d /tmp/pt-stage.XXXXXX)
-            cleanup() { rm -rf -- "$STAGE"; }
+            cleanup() { rm -rf -- "$STAGE" /tmp/pt-update.tar.gz; }
             trap cleanup EXIT
 
-            tar -xzf - -C "$STAGE"
+            tar -xzf /tmp/pt-update.tar.gz -C "$STAGE"
 
-            # 备份旧文件
+            # 备份现有线上版本
             BACKUP="/opt/pt-brush/backups/$(date +%Y%m%d-%H%M%S)-ci-deploy"
             sudo mkdir -p "$BACKUP"
             sudo chmod 700 "$BACKUP"
             sudo cp -p /opt/pt-brush/*.py /opt/pt-brush/*.html /opt/pt-brush/*.js "$BACKUP/" 2>/dev/null || true
 
-            # 覆盖新文件
+            # 安全替换文件
             for f in server.py metrics.py account_status.py security.py security_admin.py index.html app.js login.html login.js; do
               if [ -f "$STAGE/$f" ]; then
                 sudo install -o root -g root -m 644 "$STAGE/$f" "/opt/pt-brush/$f"
               fi
             done
 
-            # 重启服务并快速探测就绪
+            # 重启服务并即时自检
             sudo systemctl restart pt-brush
 
             READY=0
@@ -121,5 +123,5 @@ jobs:
               exit 1
             fi
 
-            echo "[+] 闪电部署成功！"
+            echo "[+] 极速部署成功！"
           EOF
