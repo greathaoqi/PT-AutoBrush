@@ -1,0 +1,3 @@
+[Definition]
+# Retain records longer than the two-day ban to restore active bans after restart.
+dbpurgeage = 604800

@@ -1,0 +1,6 @@
+[Unit]
+Description=PT-AutoBrush online configuration backup
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/opt/pt-brush/venv/bin/python /opt/pt-brush/deploy/backup.py

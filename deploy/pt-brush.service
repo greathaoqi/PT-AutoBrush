@@ -1,0 +1,35 @@
+[Unit]
+Description=PT-AutoBrush secure console
+After=network.target qbittorrent-nox.service
+Wants=qbittorrent-nox.service
+
+[Service]
+Type=simple
+User=pt-brush
+Group=pt-brush
+WorkingDirectory=/opt/pt-brush
+Environment=PT_SECURITY_FILE=/etc/pt-brush/security.json
+Environment=PT_PUBLIC_ORIGIN=https://pt.example.com
+Environment=PT_BIND_HOST=127.0.0.1
+Environment=PT_BIND_PORT=12300
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/pt-brush/venv/bin/python /opt/pt-brush/server.py
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/pt-brush/data /opt/pt-brush/config.json
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+env/
+venv/
+ENV/
+
+# Configuration & Sensitive Files
+config.json
+*login.json
+*access*.txt
+*.tar.gz
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Runtime & Local Data
+data/
+status.json
+scratch_details.html
+body.txt
+login_body.txt
+artifacts/
+
+# OS / Editor metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

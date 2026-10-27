@@ -1,0 +1,29 @@
+[pt-login]
+enabled = true
+filter = pt-login
+backend = polling
+logpath = /var/log/nginx/pt.access.log
+port = 80,443
+protocol = tcp
+banaction = iptables-multiport
+findtime = 600
+maxretry = 5
+bantime = 172800
+bantime.increment = false
+bantime.rndtime = 0
+usedns = no
+ignoreip = 127.0.0.1/8 ::1
+
+[sshd]
+enabled = true
+backend = systemd
+port = 22
+protocol = tcp
+banaction = iptables-multiport
+findtime = 600
+maxretry = 5
+bantime = 172800
+bantime.increment = false
+bantime.rndtime = 0
+usedns = no
+ignoreip = 127.0.0.1/8 ::1

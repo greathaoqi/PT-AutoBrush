@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew pt.example.com HTTPS certificate
+After=network-online.target nginx.service
+[Service]
+Type=oneshot
+ExecStart=/root/.acme.sh/acme.sh --renew -d pt.example.com --ecc --server letsencrypt
+SuccessExitStatus=2

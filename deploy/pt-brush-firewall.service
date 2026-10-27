@@ -1,0 +1,10 @@
+[Unit]
+Description=Block public PT management ports
+After=network-pre.target
+Before=pt-brush.service qbittorrent-nox.service
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/pt-brush/deploy/management-firewall.sh
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

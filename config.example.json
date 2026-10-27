@@ -1,0 +1,61 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 12300,
+    "token": ""
+  },
+  "downloader": {
+    "url": "http://127.0.0.1:12301",
+    "username": "admin",
+    "password": "",
+    "category": "pt-brush",
+    "save_path": "/root/Downloads",
+    "max_concurrent_downloads": 3,
+    "single_upload_limit_mb": 85,
+    "reannounce_delay_sec": 60
+  },
+  "rules": {
+    "promotion_mode": "2xfree_and_free",
+    "min_free_remaining_min": 60,
+    "min_size_gb": 2.0,
+    "max_size_gb": 15.0,
+    "max_seeders": 10,
+    "min_leechers": 2,
+    "max_age_min": 30,
+    "avoid_hnr": false,
+    "exclude_keywords": [
+      "Complete",
+      "BDMV",
+      "iPad",
+      "3D",
+      "粤语"
+    ]
+  },
+  "cull": {
+    "min_disk_free_gb": 15.0,
+    "kill_expired_free": true,
+    "target_ratio": 3.5,
+    "max_seed_time_hours": 24,
+    "delete_files": true,
+    "hr_min_seed_hours": 20.0,
+    "hr_min_ratio": 1.0,
+    "emergency_disk_free_gb": 5.0,
+    "max_disk_used_percent": 88.0,
+    "pre_check_torrent_size": true,
+    "emergency_pause_downloads": true,
+    "auto_resume_downloads": true
+  },
+  "sites": [
+    {
+      "id": "site_example",
+      "name": "ExampleSite",
+      "type": "nexusphp",
+      "base_url": "https://pt.example.com",
+      "rss_url": "https://pt.example.com/torrentrss.php?rows=20&linktype=dl&passkey=YOUR_PASSKEY_HERE",
+      "cookie": "c_secure_uid=YOUR_UID; c_secure_pass=YOUR_PASS_HASH",
+      "interval_sec": 60,
+      "enabled": false,
+      "avoid_hnr": true
+    }
+  ]
+}
