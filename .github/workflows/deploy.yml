@@ -1,0 +1,120 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Unit Tests & Security Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi uvicorn requests feedparser beautifulsoup4 python-multipart httpx
+
+      - name: Privacy & Leak Prevention Gate
+        run: |
+          python -c "
+          import os, re, sys
+          forbidden = [
+              r'fe314c4ffcef06f6900d8a702705ca88',
+              r'c_secure_uid=MTg4Mzgy',
+              r'userdetails\.php\?id=188382'
+          ]
+          for root, _, files in os.walk('.'):
+              if '.git' in root: continue
+              for f in files:
+                  path = os.path.join(root, f)
+                  try:
+                      content = open(path, encoding='utf-8', errors='ignore').read()
+                      for p in forbidden:
+                          if re.search(p, content):
+                              print(f'SECURITY LEAK: Pattern {p} found in {path}')
+                              sys.exit(1)
+                  except: pass
+          print('Privacy check passed: No leaks detected.')
+          "
+
+      - name: Run Test Suite
+        run: |
+          python -m unittest discover -v
+
+  deploy:
+    name: Deploy to Server
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            echo "==> 开始 PT-AutoBrush 自动化持续部署..."
+            TMP_DIR=$(mktemp -d /tmp/pt-brush-ci.XXXXXX)
+            cleanup() { rm -rf -- "$TMP_DIR"; }
+            trap cleanup EXIT
+
+            # 1. 克隆主分支最新代码
+            git clone --depth 1 https://github.com/greathaoqi/PT-AutoBrush.git "$TMP_DIR"
+
+            # 2. 语法预编译检查
+            if [ -x "/opt/pt-brush/venv/bin/python" ]; then
+              PY_BIN="/opt/pt-brush/venv/bin/python"
+            elif [ -x "/opt/pt-brush/.venv/bin/python" ]; then
+              PY_BIN="/opt/pt-brush/.venv/bin/python"
+            else
+              PY_BIN="python3"
+            fi
+            "$PY_BIN" -m py_compile "$TMP_DIR/server.py" "$TMP_DIR/metrics.py" "$TMP_DIR/account_status.py" "$TMP_DIR/security.py"
+
+            # 3. 自动生成备份
+            BACKUP="/opt/pt-brush/backups/$(date +%Y%m%d-%H%M%S)-ci-deploy"
+            sudo mkdir -p "$BACKUP"
+            sudo chmod 700 "$BACKUP"
+            sudo cp -p /opt/pt-brush/*.py /opt/pt-brush/*.html /opt/pt-brush/*.js "$BACKUP/" 2>/dev/null || true
+
+            # 4. 安全覆盖代码文件（严格不破坏现有 config.json、data/ 与数据库）
+            cd "$TMP_DIR"
+            sudo install -o root -g root -m 644 \
+              server.py metrics.py account_status.py security.py security_admin.py \
+              index.html app.js login.html login.js /opt/pt-brush/
+
+            # 5. 重启服务并执行健康检查
+            sudo systemctl restart pt-brush
+
+            READY=0
+            for i in $(seq 1 15); do
+              if curl --noproxy '*' -fsS --max-time 2 -o /dev/null http://127.0.0.1:12300/login; then
+                READY=1
+                break
+              fi
+              sleep 2
+            done
+
+            if [ "$READY" -ne 1 ]; then
+              echo "[-] 服务启动异常，开始自动回滚..." >&2
+              sudo cp -p "$BACKUP/"* /opt/pt-brush/
+              sudo systemctl restart pt-brush
+              exit 1
+            fi
+
+            echo "[+] 部署成功，服务健康且配置完好！备份路径: $BACKUP"
