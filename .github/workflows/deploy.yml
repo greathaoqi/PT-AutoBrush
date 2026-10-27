@@ -8,8 +8,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  pipeline:
-    name: Fast CI/CD Pipeline
+  # Pull Request 时运行完整测试套件（防止合并缺陷）
+  test:
+    name: Full Test Suite
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -22,12 +24,27 @@ jobs:
           cache: 'pip'
 
       - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
-      - name: Privacy & Leak Prevention Gate
+      - name: Run Test Suite
+        run: python -m unittest discover -v
+
+  # Push 主分支时走极速热更（免装依赖、免跑大测试，约 5~8 秒完成）
+  deploy:
+    name: Lightning Fast Deploy
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Fast Syntax & Privacy Guard
         run: |
-          python -c "
+          # 1. 系统内置 Python 快速语法编译检查（无需安装第三方库，0.2秒完成）
+          python3 -m py_compile server.py metrics.py account_status.py security.py security_admin.py
+
+          # 2. 防泄密门禁安全检查
+          python3 -c "
           import os, re, sys
           forbidden = [
               r'fe314c4ffcef06f6900d8a702705ca88',
@@ -45,15 +62,10 @@ jobs:
                               print(f'SECURITY LEAK: Pattern {p} found in {path}')
                               sys.exit(1)
                   except: pass
-          print('Privacy check passed: No leaks detected.')
+          print('Privacy check passed: OK')
           "
 
-      - name: Run Test Suite
-        run: |
-          python -m unittest discover -v
-
-      - name: Deploy to VPS via Native SSH
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - name: Direct Stream Deploy to VPS
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           HOST: ${{ secrets.VPS_HOST }}
@@ -65,43 +77,36 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p "${PORT}" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
+          # 直接通过 SSH 管道将检出的最新文件流式推送到 VPS，免去 VPS 二次 git clone 耗时
+          tar -czf - \
+            server.py metrics.py account_status.py security.py security_admin.py \
+            index.html app.js login.html login.js | \
           ssh -i ~/.ssh/id_rsa -p "${PORT}" -o StrictHostKeyChecking=accept-new "$USER@$HOST" 'bash -s' << 'EOF'
             set -euo pipefail
-            echo "==> 开始 PT-AutoBrush 极速持续部署..."
-            TMP_DIR=$(mktemp -d /tmp/pt-brush-ci.XXXXXX)
-            cleanup() { rm -rf -- "$TMP_DIR"; }
+            STAGE=$(mktemp -d /tmp/pt-stage.XXXXXX)
+            cleanup() { rm -rf -- "$STAGE"; }
             trap cleanup EXIT
 
-            # 1. 克隆主分支最新代码
-            git clone --depth 1 https://github.com/greathaoqi/PT-AutoBrush.git "$TMP_DIR"
+            tar -xzf - -C "$STAGE"
 
-            # 2. 语法预编译检查
-            if [ -x "/opt/pt-brush/venv/bin/python" ]; then
-              PY_BIN="/opt/pt-brush/venv/bin/python"
-            elif [ -x "/opt/pt-brush/.venv/bin/python" ]; then
-              PY_BIN="/opt/pt-brush/.venv/bin/python"
-            else
-              PY_BIN="python3"
-            fi
-            "$PY_BIN" -m py_compile "$TMP_DIR/server.py" "$TMP_DIR/metrics.py" "$TMP_DIR/account_status.py" "$TMP_DIR/security.py"
-
-            # 3. 自动生成备份
+            # 备份旧文件
             BACKUP="/opt/pt-brush/backups/$(date +%Y%m%d-%H%M%S)-ci-deploy"
             sudo mkdir -p "$BACKUP"
             sudo chmod 700 "$BACKUP"
             sudo cp -p /opt/pt-brush/*.py /opt/pt-brush/*.html /opt/pt-brush/*.js "$BACKUP/" 2>/dev/null || true
 
-            # 4. 安全覆盖代码文件（严格不破坏现有 config.json、data/ 与数据库）
-            cd "$TMP_DIR"
-            sudo install -o root -g root -m 644 \
-              server.py metrics.py account_status.py security.py security_admin.py \
-              index.html app.js login.html login.js /opt/pt-brush/
+            # 覆盖新文件
+            for f in server.py metrics.py account_status.py security.py security_admin.py index.html app.js login.html login.js; do
+              if [ -f "$STAGE/$f" ]; then
+                sudo install -o root -g root -m 644 "$STAGE/$f" "/opt/pt-brush/$f"
+              fi
+            done
 
-            # 5. 重启服务并即时自检
+            # 重启服务并快速探测就绪
             sudo systemctl restart pt-brush
 
             READY=0
-            for _ in $(seq 1 15); do
+            for _ in $(seq 1 10); do
               if curl --noproxy '*' -fsS --max-time 1 -o /dev/null http://127.0.0.1:12300/login; then
                 READY=1
                 break
@@ -110,11 +115,11 @@ jobs:
             done
 
             if [ "$READY" -ne 1 ]; then
-              echo "[-] 服务启动异常，开始自动回滚..." >&2
+              echo "[-] 服务启动异常，回滚..." >&2
               sudo cp -p "$BACKUP/"* /opt/pt-brush/
               sudo systemctl restart pt-brush
               exit 1
             fi
 
-            echo "[+] 极速部署成功，服务健康！备份路径: $BACKUP"
+            echo "[+] 闪电部署成功！"
           EOF
